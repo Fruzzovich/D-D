@@ -591,12 +591,13 @@ const DB={db:null,
 let saveT=null;function save(){clearTimeout(saveT);saveT=setTimeout(()=>DB.set('stato',S),300);}
 
 // ---------- libreria ----------
-function allLib(){return S.custom.concat(SRD);}
+const BUILTIN=SRD.map(c=>Object.assign(c,{builtin:1})).concat(typeof MMDATA!=='undefined'?MMDATA:[]);
+function allLib(){return S.custom.concat(BUILTIN);}
 const normName=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
 function nameTaken(name,exceptId){const n=normName(name);if(!n)return {n:'(vuoto)'};return allLib().find(c=>c.id!==exceptId&&(normName(c.name)===n||(c.en&&normName(c.en)===n)));}
-function nameMsg(name,exceptId){if(!normName(name))return 'Il nome è vuoto.';const t=nameTaken(name,exceptId);return t?`Esiste già “${t.name}”${t.en&&normName(t.en)===normName(name)?' (nome originale inglese)':''} in libreria (${t.src==='SRD 5.1'?'SRD':KIND_IT[t.kind]}). Scegli un altro nome.`:'';}
+function nameMsg(name,exceptId){if(!normName(name))return 'Il nome è vuoto.';const t=nameTaken(name,exceptId);return t?`Esiste già “${t.name}”${t.en&&normName(t.en)===normName(name)?' (nome originale inglese)':''} in libreria (${t.src==='SRD 5.1'?'SRD':t.builtin?esc(t.src):KIND_IT[t.kind]}). Scegli un altro nome.`:'';}
 function askNewName(def,exceptId){let n=def;for(;;){n=prompt('Nome del nuovo template:',n);if(n===null)return null;const m=nameMsg(n,exceptId);if(!m)return n.trim();alert(m);}}
-function getTpl(id){return S.custom.find(c=>c.id===id)||SRD.find(c=>c.id===id);}
+function getTpl(id){return S.custom.find(c=>c.id===id)||BUILTIN.find(c=>c.id===id);}
 function memC(m){return m.c||getTpl(m.tpl)||{name:m.name||'?',ab:[10,10,10,10,10,10],ac:10,hp:1,acts:[]};}
 function initials(n){return String(n||'?').split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();}
 function tokHTML(c,cls){const col=c.kind==='pg'?'#2f5d50':c.kind==='png'?'#4f6a8a':(TYPE_COL[c.type]||'#8a7a5c');
@@ -610,9 +611,9 @@ function renderLib(){
   if(q)list=list.filter(c=>(c.name+' '+(c.en||'')+' '+(c.type||'')+' '+(c.cls||'')).toLowerCase().includes(q));
   const crMin=$('#crmin')?$('#crmin').value:'',crMax=$('#crmax')?$('#crmax').value:'';
   if(libTab==='mostri'){if(crMin!=='')list=list.filter(c=>crOf(c)>=+crMin);if(crMax!=='')list=list.filter(c=>crOf(c)<=+crMax);
-    list.sort((a,b)=>(a.src==='SRD 5.1')-(b.src==='SRD 5.1')||crOf(a)-crOf(b)||a.name.localeCompare(b.name));}
+    list.sort((a,b)=>(!!a.builtin)-(!!b.builtin)||crOf(a)-crOf(b)||a.name.localeCompare(b.name));}
   else list.sort((a,b)=>a.name.localeCompare(b.name));
-  $('#libList').innerHTML=list.slice(0,1500).map(c=>`<div class="item" draggable="true" data-id="${esc(c.id)}">${tokHTML(c)}<div class="nm"><b>${esc(c.name)}</b><small>${c.kind==='mostro'?`GS ${crLabel(crOf(c))} · ${esc(TYPE_IT[c.type]||c.type||'')}${c.src==='SRD 5.1'?'':' · <i>personalizzato</i>'}`:`${KIND_IT[c.kind]} · ${esc(c.cls||'')} liv. ${c.level||1}`} · CA ${c.ac} · PF ${c.hp}</small></div><button class="sm" data-ed="${esc(c.id)}" title="Modifica">✎</button></div>`).join('')||'<p class="hint" style="padding:8px">Nessun risultato.</p>';
+  $('#libList').innerHTML=list.slice(0,1500).map(c=>`<div class="item" draggable="true" data-id="${esc(c.id)}">${tokHTML(c)}<div class="nm"><b>${esc(c.name)}</b><small>${c.kind==='mostro'?`GS ${crLabel(crOf(c))} · ${esc(TYPE_IT[c.type]||c.type||'')}${c.src==='SRD 5.1'?'':c.builtin?' · '+esc(c.src)+(/Da verificare/.test(c.notes||'')?' · <span class="warn" title="'+esc(c.notes)+'">⚠ da verificare</span>':''):' · <i>personalizzato</i>'}`:`${KIND_IT[c.kind]} · ${esc(c.cls||'')} liv. ${c.level||1}`} · CA ${c.ac} · PF ${c.hp}</small></div><button class="sm" data-ed="${esc(c.id)}" title="Modifica">✎</button></div>`).join('')||'<p class="hint" style="padding:8px">Nessun risultato.</p>';
   $$('#libList .item').forEach(it=>{it.addEventListener('dragstart',e=>{e.dataTransfer.setData('text/plain',JSON.stringify({src:'lib',id:it.dataset.id}));});});
   $$('#libList [data-ed]').forEach(b=>b.onclick=()=>openEditor({tplId:b.dataset.ed}));
   $$('#lib .tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===libTab));
@@ -779,8 +780,8 @@ function renderEditor(){const c=ED.c;const isMem=!!ED.o.mem;const tpl=ED.o.tplId
   const crr=computeCR(c);
   const chk=(pre,arr,list,lab)=>`<div class="chk">${list.map(t=>`<label><input type="checkbox" id="e-${pre}-${t}" ${arr.includes(t)?'checked':''}>${esc(lab[t]||t)}</label>`).join('')}</div>`;
   const sec=(L,title)=>`<fieldset><legend>${title}</legend>${(L==='leg'?(c.leg?c.leg.acts:[]):c[L]).map((a,i)=>actHTML(a,L,i)).join('')}<div class="row"><button class="sm addA" data-l="${L}">+ Nuova</button> ${comboHTML('cb-'+L,'Aggiungi da un\'altra creatura… (scrivi per cercare)')}</div>${L==='leg'?`<div class="row"><label class="in">azioni leggendarie per round <input type="number" id="e-legn" value="${c.leg?c.leg.n:3}"></label></div>`:''}</fieldset>`;
-  const isSRD=tpl&&tpl.src==='SRD 5.1',isCustom=tpl&&!isSRD,isNew=!isMem&&!tpl;
-  $('#modal .box').innerHTML=`<div class="mh"><h2>${isMem?'Creatura nell\'incontro: ':isNew?'Nuova creatura: ':''}${esc(c.name)}${c.en&&c.en!==c.name?` <small class="mute">(${esc(c.en)})</small>`:''}</h2>${isMem?'<span class="hint">Le modifiche valgono solo per questo incontro.</span>':''}${isSRD?'<span class="hint">Creatura dell\'SRD: per modificarla salvala come nuovo template.</span>':''}${!isNew?'<button id="eSaveNew">Salva come nuovo template…</button>':''}${isMem&&ED.o.mem.c?'<button id="eReset">Ripristina dalla libreria</button>':''}${isCustom?'<button id="eDel" class="sm">Elimina dalla libreria</button>':''}${isSRD?'':`<button class="pri" id="eSave">${isMem?'Applica':'Salva'}</button>`}<button id="eClose">${isSRD?'Chiudi':'Annulla'}</button></div>
+  const isSRD=tpl&&!!tpl.builtin,isCustom=tpl&&!isSRD,isNew=!isMem&&!tpl;
+  $('#modal .box').innerHTML=`<div class="mh"><h2>${isMem?'Creatura nell\'incontro: ':isNew?'Nuova creatura: ':''}${esc(c.name)}${c.en&&c.en!==c.name?` <small class="mute">(${esc(c.en)})</small>`:''}</h2>${isMem?'<span class="hint">Le modifiche valgono solo per questo incontro.</span>':''}${isSRD?'<span class="hint">Creatura di base ('+esc(tpl.src)+'): per modificarla salvala come nuovo template.</span>':''}${!isNew?'<button id="eSaveNew">Salva come nuovo template…</button>':''}${isMem&&ED.o.mem.c?'<button id="eReset">Ripristina dalla libreria</button>':''}${isCustom?'<button id="eDel" class="sm">Elimina dalla libreria</button>':''}${isSRD?'':`<button class="pri" id="eSave">${isMem?'Applica':'Salva'}</button>`}<button id="eClose">${isSRD?'Chiudi':'Annulla'}</button></div>
   ${ED.warn&&ED.warn.length?`<div style="padding:6px 14px;background:#fff4dc;border-bottom:1px solid var(--line);font-size:12px"><b>Da controllare dopo la lettura del blocco statistiche:</b><ul style="margin:2px 0;padding-left:18px">${ED.warn.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>`:''}
   <div class="mb"><div>
    <fieldset><legend>Generale</legend><div class="row"><div class="imgdrop" id="eImg" style="${c.img?`background-image:url(${c.img})`:''}">${c.img?'':'Trascina, clicca o incolla un\'immagine'}</div><input type="file" id="eImgF" accept="image/*" style="display:none">
@@ -890,6 +891,7 @@ function importJSON(file){const fr=new FileReader();fr.onload=()=>{try{const d=J
 
 // ---------- avvio ----------
 async function boot(){await DB.open();const st=await DB.get('stato');if(st&&st.enc)S=Object.assign(S,st);else S.enc=newEnc();
+  if(typeof MMDATA!=='undefined'){const nn=new Set(MMDATA.map(c=>normName(c.name)));const b=S.custom.length;S.custom=S.custom.filter(c=>!(c.src==='Manuale dei Mostri'&&nn.has(normName(c.name))));if(S.custom.length!==b)save();}
   $('#nsim').value=S.n||10;$('#maxr').value=S.maxR||50;
   $('#libQ').oninput=e=>{libQ=e.target.value;renderLib();};
   $$('#lib .tabs button').forEach(b=>b.onclick=()=>{libTab=b.dataset.tab;renderLib();});
